@@ -1,0 +1,123 @@
+#1 FASTQ → QC
+fastqc fastq/*.fastq.gz -o qc/
+
+# Trimmomatic (paired-end example)
+trimmomatic PE \
+  fastq/sample_R1.fastq.gz fastq/sample_R2.fastq.gz \
+  fastq/sample_R1.trimmed.fastq.gz fastq/sample_R1.unpaired.fastq.gz \
+  fastq/sample_R2.trimmed.fastq.gz fastq/sample_R2.unpaired.fastq.gz \
+  ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 \
+  SLIDINGWINDOW:4:20 MINLEN:50
+
+#2 V(D)J Alignment / Assembly
+  ##Option A: MiXCR (most common) Align
+  mixcr align \
+  -s hsa \
+  -p rna-seq \
+  fastq/sample_R1.trimmed.fastq.gz \
+  fastq/sample_R2.trimmed.fastq.gz \
+  mixcr/sample.vdjca
+
+  ## Assemble clonotypes
+  mixcr assemble \
+  mixcr/sample.vdjca \
+  mixcr/sample.clns
+
+  ## Export clonotypes
+  mixcr exportClones \
+  -t \
+  -o mixcr/sample_clones.tsv \
+  mixcr/sample.clns
+
+  ## Option B: IgBLAST (BCR-focused, IMGT-compatible)
+  igblastn \
+  -query fastq/sample.fasta \
+  -germline_db_V human_gl_V \
+  -germline_db_D human_gl_D \
+  -germline_db_J human_gl_J \
+  -organism human \
+  -domain_system imgt \
+  -out igblast/sample.out
+
+# 3 Load repertoire into R
+  library(immunarch)
+  library(tidyverse)
+  rep <- repLoad("mixcr/")
+  ###Check data:
+  rep$data$sample %>% head()
+  rep$meta
+
+### 4 Clonotype Assignment
+  rep <- repClonality(
+  rep,
+  .method = "clones",
+  .col = "cdr3aa"
+)
+
+##Or define by V + J + CDR3:
+rep <- repClonality(
+  rep,
+  .method = "vj_cdr3"
+)
+
+# 5  Diversity & Repertoire Metrics
+#Diversity indices
+div <- repDiversity(rep$data,
+                    .method = c("shannon", "simpson", "gini"))
+
+repDiversity(rep$data, "shannon") %>% head()
+
+##Clonal expansion
+repExplore(rep$data, "clonal.prop")
+
+###CDR3 length distribution
+repExplore(rep$data, "len")
+
+# 6 Somatic Hypermutation
+## Using MiXCR output
+repMut <- repExplore(rep$data, "mutations")
+
+## Using Change-O (more detailed SHM)
+library(alakazam)
+db <- readChangeoDb("changeo_db.tsv")
+shm <- calcObservedMutations(db,
+                             sequenceColumn = "SEQUENCE_IMGT",
+                             germlineColumn = "GERMLINE_IMGT_D_MASK")
+
+# Visualize mutation load by sample condition
+plotMutationBin(shm, group="Condition")
+
+# 7 Lineage / Clonal Tree Analysis (BCR)
+
+library(alakazam)
+library(igraph)
+
+clones <- groupByClonotype(db, cloneColumn = "CLONE")
+
+trees <- buildPhylipLineage(
+  clones,
+  sequenceColumn = "SEQUENCE_IMGT"
+)
+
+# 8 Differential Repertoire Analysis
+ ## Clonotype abundance comparison
+repDiff <- repClonality(rep,
+                        .method = "expansion",
+                        .group = "Condition")
+
+ ## Differential V/J usage
+vj_diff <- repOverlap(rep$data,
+                      .method = "public")
+
+## explicit testing:
+
+repTest(rep$data,
+        .method = "chisq",
+        .group = "Condition",
+        .col = "vGene")
+
+# 9 Motif & Sequence Pattern Analysis
+
+repMotif(rep$data,
+         .col = "cdr3aa",
+         .method = "logo")
