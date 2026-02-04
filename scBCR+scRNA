@@ -1,0 +1,167 @@
+### Assumptions:
+10x Chromium scRNA + VDJ (BCR) from the same library
+Human
+Paired heavy/light chains
+Goal: cell annotation → clonotypes → expansion → biology
+#############
+
+###00 Packages
+library(Seurat)
+library(scRepertoire)
+library(tidyverse)
+library(patchwork)
+
+##1 Read scRNA-seq (Cell Ranger output)
+rna.data <- Read10X(data.dir = "filtered_feature_bc_matrix/")
+
+seu <- CreateSeuratObject(
+  counts = rna.data,
+  min.cells = 3,
+  min.features = 200,
+  project = "scBCR_RNA"
+)
+
+## 2  scRNA-seq QC (same logic as normal scRNA)
+seu[["percent.mt"]] <- PercentageFeatureSet(seu, pattern = "^MT-")
+
+VlnPlot(seu,
+        features = c("nFeature_RNA", "nCount_RNA", "percent.mt"),
+        ncol = 3)
+
+seu <- subset(seu,
+              subset = nFeature_RNA > 200 &
+                       nFeature_RNA < 6000 &
+                       percent.mt < 15)
+
+
+ ### QC absolutely applies to scBCR, because clonotypes are assigned to cells.
+
+##3 Normalization + clustering
+seu <- SCTransform(seu, verbose = FALSE)
+seu <- RunPCA(seu)
+seu <- RunUMAP(seu, dims = 1:30)
+
+seu <- FindNeighbors(seu, dims = 1:30)
+seu <- FindClusters(seu, resolution = 0.5)
+
+##4  Cell type annotation (focus on B cells)
+FeaturePlot(seu,
+            features = c("MS4A1", "CD79A", "CD37"))
+
+seu <- subset(seu, subset = MS4A1 > 0)
+
+
+#### your object contains only B cells, which is usually what you want for scBCR analysis.
+
+##5 Read scBCR VDJ data (Cell Ranger VDJ)
+bcr <- readBCR(
+  contig_path = "vdj_bcr/filtered_contig_annotations.csv",
+  species = "human",
+  removeMulti = TRUE
+)
+
+#######################
+What this gives you:
+Heavy/light chains
+CDR3
+V/D/J genes
+Isotype (IGHM, IGHG, etc.)
+##########################
+
+##6  Clonotype definition
+bcr <- combineBCR(
+  bcr,
+  samples = "sample1",
+  ID = "Condition1"
+)
+
+##########
+Define clonotypes by:
+Paired heavy + light
+CDR3 amino acid
+###########
+
+## 7  Integrate scBCR → scRNA (key step)
+seu <- combineExpression(
+  bcr,
+  seu,
+  cloneCall = "gene+aa",
+  groupBy = "sample"
+)
+
+#######################################
+Maps clonotype IDs to Seurat barcodes
+Adds metadata:
+cloneType
+clonalFrequency
+isotype
+####################################
+####Check:
+head(seu@meta.data)
+
+##8  Clonal expansion analysis
+DimPlot(seu,
+        group.by = "cloneType",
+        label = TRUE) +
+  scale_color_manual(values = c("grey80", "red"))
+
+###Or frequency-based:
+DimPlot(seu,
+        group.by = "clonalFrequency")
+
+### 9 Isotype usage (BCR-specific)
+DimPlot(seu, group.by = "isotype")
+table(seu$isotype)
+
+########################
+Typical interpretation:
+IgM → naïve
+IgG/IgA → class-switched, antigen-experienced
+#######################
+
+## 10 Clonotype × transcriptional state
+## Expanded vs non-expanded DE genes
+seu$expanded <- ifelse(seu$clonalFrequency > 5,
+                       "Expanded", "Single")
+
+Idents(seu) <- "expanded"
+markers <- FindMarkers(seu,
+                       ident.1 = "Expanded",
+                       ident.2 = "Single")
+head(markers)
+
+
+
+## 11 Somatic hypermutation proxy (scRNA-based)
+##scRepertoire adds mutation counts:
+
+VlnPlot(seu,
+        features = "nMutations",
+        group.by = "isotype")
+
+#####
+Higher SHM:
+Memory B cells
+Germinal center–like states
+######
+
+## 12 Clonotype lineage (optional, advanced)
+clonalNetwork(
+  bcr,
+  sequence = "aa",
+  chain = "IGH",
+  plot = TRUE
+)
+
+######################
+Used for:
+Affinity maturation
+Vaccine response
+Antibody discovery
+######################
+
+## 13 Tie to immune biology
+
+FeaturePlot(seu,
+            features = c("PRDM1", "XBP1", "IRF4"),
+            split.by = "expanded")
