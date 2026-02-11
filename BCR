@@ -1,3 +1,15 @@
+BCR Pipeline
+#1 FASTQ → QC
+#2 V(D)J Alignment / Assembly
+  Option A: MiXCR (most common) Align
+  Option B: IgBLAST (BCR-focused, IMGT-compatible)
+#3 Load repertoire into R
+#4 Clonotype Assignment
+#5 Diversity & Repertoire Metrics
+#6 Somatic Hypermutation
+#7 Lineage / Clonal Tree Analysis (BCR)
+#8 Differential Repertoire Analysis
+
 #1 FASTQ → QC
 fastqc fastq/*.fastq.gz -o qc/
 
