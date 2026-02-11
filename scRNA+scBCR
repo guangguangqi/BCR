@@ -1,3 +1,18 @@
+scBCR+scRNA Pipeline
+##1 Read scRNA-seq (Cell Ranger output)
+##2  scRNA-seq QC (same logic as normal scRNA)
+##3 Normalization + clustering
+##4  Cell type annotation (focus on B cells)
+##5 Read scBCR VDJ data (Cell Ranger VDJ)
+##6  Clonotype definition
+##7  Integrate scBCR → scRNA (key step)
+##8  Clonal expansion analysis
+##9 Isotype usage (BCR-specific)
+## 10 Clonotype × transcriptional state
+## 11 Somatic hypermutation proxy (scRNA-based)
+## 12 Clonotype lineage (optional, advanced)
+## 13 Tie to immune biology
+
 ### Assumptions:
 10x Chromium scRNA + VDJ (BCR) from the same library
 Human
